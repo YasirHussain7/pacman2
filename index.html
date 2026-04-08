@@ -2,66 +2,75 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Pacman</title>
+  <title>Pacman WebVR</title>
 
-  <!-- A-Frame -->
+  <!-- REQUIRED LIBS -->
   <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
   <script src="https://unpkg.com/aframe-extras/dist/aframe-extras.min.js"></script>
 
-  <style>
-    body { margin: 0; font-family: Arial; }
-    .overlay {
-      position: absolute;
-      left: 50%;
-      transform: translateX(-50%);
-      color: white;
-      z-index: 10;
-    }
-    #ui { top: 10px; }
-  </style>
+  <!-- YOUR BUNDLE -->
+  <script src="dist/bundle.js"></script>
+
+  <link rel="stylesheet" href="index.css">
 </head>
 
 <body>
 
-<div id="ui" class="overlay">
-  Score: <span id="score">0</span> |
-  High Score: <span id="highscore">0</span> |
+<!-- UI -->
+<div id="scoreUI" style="position:absolute; top:10px; left:10px; color:white;">
+  Score: <span id="score">0</span><br>
+  High Score: <span id="highscore">0</span><br>
   Lives: <span id="lives">3</span>
 </div>
 
 <a-scene>
 
-  <!-- SKY -->
-  <a-sky color="blue"></a-sky>
+  <!-- Assets -->
+  <a-assets>
+    <a-asset-item id="navmesh" src="assets/models/navmesh.gltf"></a-asset-item>
+    <a-asset-item id="ghost" src="assets/models/ghost.gltf"></a-asset-item>
+    <a-asset-item id="maze" src="assets/models/maze.gltf"></a-asset-item>
+    <img id="life" src="assets/images/pacman.png">
+  </a-assets>
 
   <!-- PLAYER -->
   <a-entity id="player"
-            position="0 1.6 5"
-            movement-controls="speed: 0.15">
-    <a-camera wasd-controls look-controls></a-camera>
+            movement-controls="constrainToNavMesh: true; speed: 0.7"
+            position="0 0 4"
+            nav-agent="speed: 0.7">
+    
+    <a-camera position="0 1 0"
+              wasd-controls="enabled: true"
+              look-controls="enabled: true">
+    </a-camera>
+
+    <a-sphere color="yellow"
+              radius="0.4"
+              position="0 0.5 0.05">
+    </a-sphere>
+
   </a-entity>
 
-  <!-- FLOOR -->
-  <a-plane rotation="-90 0 0" width="20" height="20" color="black"></a-plane>
+  <!-- NAVMESH -->
+  <a-entity nav-mesh visible="false" gltf-model="#navmesh"></a-entity>
 
-  <!-- PELLETS -->
-  <a-sphere class="pellet" position="0 0.5 -2" radius="0.1" color="yellow"></a-sphere>
-  <a-sphere class="pellet" position="2 0.5 -3" radius="0.1" color="yellow"></a-sphere>
+  <!-- GHOSTS -->
+  <a-gltf-model class="ghost" gltf-model="#ghost" position="0 0 -2"></a-gltf-model>
+  <a-gltf-model class="ghost" gltf-model="#ghost" position="-1 0 -1"></a-gltf-model>
+  <a-gltf-model class="ghost" gltf-model="#ghost" position="1 0 -1"></a-gltf-model>
 
-  <!-- POWER PELLET -->
-  <a-sphere id="power" position="-2 0.5 -3"
-            radius="0.2"
-            color="orange"
-            material="emissive: orange"></a-sphere>
+  <!-- MAZE -->
+  <a-gltf-model scale="1 1.6 1" gltf-model="#maze"></a-gltf-model>
 
-  <!-- GHOST -->
-  <a-box id="ghost"
-         position="0 0.5 -5"
-         color="red"></a-box>
+  <a-plane rotation="-90 0 0" width="15" height="16" color="black"></a-plane>
+  <a-sky color="blue"></a-sky>
 
 </a-scene>
 
 <script>
+// =====================
+// GAME STATE
+// =====================
 let score = 0;
 let lives = 3;
 let highScore = localStorage.getItem("highScore") || 0;
@@ -72,8 +81,10 @@ const livesEl = document.getElementById("lives");
 
 highScoreEl.innerText = highScore;
 
-// UPDATE SCORE
-function updateScore(points) {
+// =====================
+// SCORE SYSTEM
+// =====================
+function addScore(points) {
   score += points;
   scoreEl.innerText = score;
 
@@ -84,67 +95,70 @@ function updateScore(points) {
   }
 }
 
-// LOSE LIFE
+// =====================
+// LIVES SYSTEM
+// =====================
 function loseLife() {
   lives--;
   livesEl.innerText = lives;
 
   if (lives <= 0) {
-    alert("Game Over!");
+    alert("Game Over");
     location.reload();
   }
 }
 
-// COLLISION CHECK
-function distance(a, b) {
+// =====================
+// DISTANCE HELPER
+// =====================
+function dist(a, b) {
   return a.object3D.position.distanceTo(b.object3D.position);
 }
 
+// =====================
+// MAIN LOOP
+// =====================
 AFRAME.registerComponent("game-loop", {
   tick: function () {
     const player = document.querySelector("#player");
-    const pellets = document.querySelectorAll(".pellet");
-    const ghost = document.querySelector("#ghost");
-    const power = document.querySelector("#power");
+    const ghosts = document.querySelectorAll(".ghost");
 
-    // PELLET COLLISION
-    pellets.forEach(p => {
-      if (p && distance(player, p) < 0.5) {
-        p.parentNode.removeChild(p);
-        updateScore(10);
+    ghosts.forEach(g => {
+      // SIMPLE PROXIMITY AI
+      let d = dist(player, g);
+
+      if (d < 5) {
+        let dir = player.object3D.position.clone()
+          .sub(g.object3D.position)
+          .normalize();
+
+        g.object3D.position.add(dir.multiplyScalar(0.02));
+      }
+
+      // COLLISION
+      if (d < 0.8) {
+        loseLife();
+        g.object3D.position.set(0, 0, -2);
       }
     });
-
-    // POWER PELLET
-    if (power && distance(player, power) < 0.7) {
-      power.parentNode.removeChild(power);
-
-      player.setAttribute("movement-controls", "speed", 0.4);
-
-      setTimeout(() => {
-        player.setAttribute("movement-controls", "speed", 0.15);
-      }, 5000);
-    }
-
-    // GHOST AI (simple chase)
-    if (ghost) {
-      let dir = player.object3D.position.clone()
-        .sub(ghost.object3D.position)
-        .normalize();
-
-      ghost.object3D.position.add(dir.multiplyScalar(0.02));
-
-      // COLLISION WITH GHOST
-      if (distance(player, ghost) < 0.7) {
-        loseLife();
-        ghost.object3D.position.set(0, 0.5, -5);
-      }
-    }
   }
 });
 
-// ATTACH GAME LOOP
 document.querySelector("a-scene").setAttribute("game-loop", "");
+
+// =====================
+// POWER PELLET HOOK
+// =====================
+// Call this from your bundle.js when pellet eaten
+window.activateSpeedBoost = function () {
+  const player = document.querySelector("#player");
+
+  player.setAttribute("nav-agent", "speed", 1.5);
+
+  setTimeout(() => {
+    player.setAttribute("nav-agent", "speed", 0.7);
+  }, 5000);
+};
 
 </script>
 
